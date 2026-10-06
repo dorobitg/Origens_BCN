@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Origen's BCN · Gestió de pressupostos</title>
+<link rel="icon" href="assets/img/logo.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/styles.css">
+<script>
+/* Si la sessió ja està desbloquejada, s'evita que es vegi el bloqueig en carregar */
+try { if (sessionStorage.getItem('obcn-unlocked') === '1') document.documentElement.classList.add('unlocked'); } catch (e) {}
+</script>
+<style>
+/* ---------- Bloqueig d'accés ---------- */
+html:not(.unlocked) body > :not(#gate){display:none!important}
+html.unlocked #gate{display:none}
+#gate{position:fixed;inset:0;z-index:100;display:grid;place-items:center;background:var(--accent);color:var(--on-accent);padding:calc(24px + env(safe-area-inset-top,0px)) 20px calc(24px + env(safe-area-inset-bottom,0px))}
+.gate-box{width:100%;max-width:340px;text-align:center}
+.gate-logo{display:inline-block;background:#FFFFFF;border-radius:6px;padding:10px 14px;line-height:0;margin-bottom:28px}
+.gate-logo img{height:58px;width:auto}
+.gate-box h1{font-family:"Barlow Condensed","Arial Narrow",Arial,sans-serif;font-size:40px;font-weight:700;line-height:1;margin:0 0 8px}
+.gate-box p{margin:0 0 24px;opacity:.85;font-size:15px}
+.pin{position:relative;display:flex;justify-content:center;gap:12px;margin-bottom:16px}
+.pin span{width:58px;height:68px;border:2px solid currentColor;border-radius:10px;display:grid;place-items:center;font-family:"Barlow Condensed",sans-serif;font-size:38px;font-weight:700;opacity:.55}
+.pin span.f{opacity:1}
+.pin span.cur{opacity:1;box-shadow:0 0 0 3px var(--soft)}
+.pin input{position:absolute;inset:0;width:100%;height:100%;opacity:0;font-size:16px;border:0;caret-color:transparent;cursor:pointer}
+.gate-msg{min-height:22px;font-size:14px;font-weight:600}
+.pin.shake{animation:shake .35s}
+@keyframes shake{25%{transform:translateX(-8px)}50%{transform:translateX(8px)}75%{transform:translateX(-4px)}}
+@media (prefers-reduced-motion:reduce){.pin.shake{animation:none}}
+.nav-in{justify-content:space-between}
+.nav-left{display:flex;align-items:center;gap:22px;min-width:0}
+.lock{flex:none;background:transparent;border:1.5px solid var(--line);color:var(--ink);padding:7px 12px;font-size:14px}
+.lock:hover{border-color:var(--accent)}
+</style>
+</head>
+<body>
+
+<!-- ======================= ACCÉS AMB CODI ======================= -->
+<div id="gate" role="dialog" aria-modal="true" aria-labelledby="gate-title">
+  <form class="gate-box" id="gate-form" autocomplete="off">
+    <div class="gate-logo"><img src="assets/img/logo.jpg" alt="Origen's BCN"></div>
+    <h1 id="gate-title">Accés restringit</h1>
+    <p>Introdueix el codi de 4 xifres per entrar.</p>
+    <div class="pin" id="pin">
+      <span></span><span></span><span></span><span></span>
+      <input id="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" aria-label="Codi d'accés de 4 xifres" autocomplete="off">
+    </div>
+    <div class="gate-msg" id="gate-msg" aria-live="assertive"></div>
+  </form>
+</div>
+<script>
+(function () {
+  // Hash SHA-256 de "origens-bcn:" + codi. Per canviar el codi, calcula el nou hash
+  // (vegeu README) i substitueix aquest valor.
+  var PIN_HASH = 'd2495417c952a811121b942fab83381d8f72cd6db69f976e0990c7f85d7c8145';
+  var KEY = 'obcn-unlocked', MAX = 5, WAIT = 30;
+  var root = document.documentElement, input = document.getElementById('pin-input');
+  var boxes = document.querySelectorAll('#pin span'), msg = document.getElementById('gate-msg'), pin = document.getElementById('pin');
+  var fails = 0, lockedUntil = 0, timer;
+
+  function sha256(str) {
+    if (window.crypto && crypto.subtle && window.TextEncoder) {
+      return crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)).then(function (b) {
+        return Array.from(new Uint8Array(b)).map(function (x) { return x.toString(16).padStart(2, '0'); }).join('');
+      });
+    }
+    return Promise.resolve(sha256js(str));
+  }
+  // Alternativa per a navegadors sense crypto.subtle (p. ex. obrint el fitxer en local)
+  function sha256js(ascii) {
+    function r(v, a) { return (v >>> a) | (v << (32 - a)); }
+    var mp = Math.pow, mw = mp(2, 32), res = '', words = [], bl = ascii.length * 8, h = [], k = [], pc = 0, ic = {};
+    for (var c = 2; pc < 64; c++) { if (!ic[c]) { for (var i = 0; i < 313; i += c) ic[i] = c; h[pc] = (mp(c, .5) * mw) | 0; k[pc++] = (mp(c, 1 / 3) * mw) | 0; } }
+    ascii = unescape(encodeURIComponent(ascii)); bl = ascii.length * 8; ascii += '\x80';
+    while (ascii.length % 64 - 56) ascii += '\x00';
+    for (i = 0; i < ascii.length; i++) words[i >> 2] |= ascii.charCodeAt(i) << ((3 - i) % 4) * 8;
+    words[words.length] = ((bl / mw) | 0); words[words.length] = bl;
+    h = h.slice(0, 8);
+    for (var j = 0; j < words.length;) {
+      var w = words.slice(j, j += 16), oh = h.slice(0);
+      for (i = 0; i < 64; i++) {
+        var w15 = w[i - 15], w2 = w[i - 2], a = h[0], e = h[4];
+        var t1 = h[7] + (r(e, 6) ^ r(e, 11) ^ r(e, 25)) + ((e & h[5]) ^ (~e & h[6])) + k[i] +
+          (w[i] = (i < 16) ? w[i] : (w[i - 16] + (r(w15, 7) ^ r(w15, 18) ^ (w15 >>> 3)) + w[i - 7] + (r(w2, 17) ^ r(w2, 19) ^ (w2 >>> 10))) | 0);
+        var t2 = (r(a, 2) ^ r(a, 13) ^ r(a, 22)) + ((a & h[1]) ^ (a & h[2]) ^ (h[1] & h[2]));
+        h = [(t1 + t2) | 0].concat(h); h[4] = (h[4] + t1) | 0; h.length = 8;
+      }
+      for (i = 0; i < 8; i++) h[i] = (h[i] + oh[i]) | 0;
+    }
+    for (i = 0; i < 8; i++) for (j = 3; j + 1; j--) { var b = (h[i] >> (j * 8)) & 255; res += (b < 16 ? '0' : '') + b.toString(16); }
+    return res;
+  }
+
+  function paint() {
+    var v = input.value;
+    boxes.forEach(function (b, i) { b.textContent = i < v.length ? '•' : ''; b.className = (i < v.length ? 'f' : '') + (i === v.length && document.activeElement === input ? ' cur' : ''); });
+  }
+  function fail(text) {
+    msg.textContent = text; input.value = ''; paint();
+    pin.classList.remove('shake'); void pin.offsetWidth; pin.classList.add('shake');
+  }
+  function countdown() {
+    clearInterval(timer); input.disabled = true;
+    timer = setInterval(function () {
+      var s = Math.ceil((lockedUntil - Date.now()) / 1000);
+      if (s <= 0) { clearInterval(timer); input.disabled = false; msg.textContent = ''; fails = 0; input.focus(); return; }
+      msg.textContent = 'Massa intents. Torna-ho a provar d\'aquí ' + s + ' s.';
+    }, 250);
+  }
+  function check() {
+    var v = input.value;
+    if (v.length < 4 || Date.now() < lockedUntil) return;
+    sha256('origens-bcn:' + v).then(function (h) {
+      if (h === PIN_HASH) {
+        try { sessionStorage.setItem(KEY, '1'); } catch (e) {}
+        input.value = ''; msg.textContent = ''; root.classList.add('unlocked'); window.scrollTo(0, 0);
+      } else {
+        fails++;
+        if (fails >= MAX) { lockedUntil = Date.now() + WAIT * 1000; fail(''); countdown(); }
+        else fail('Codi incorrecte. ' + (MAX - fails) + (MAX - fails === 1 ? ' intent restant.' : ' intents restants.'));
+      }
+    });
+  }
+  input.addEventListener('input', function () { input.value = input.value.replace(/\D/g, '').slice(0, 4); paint(); if (input.value.length === 4) check(); });
+  input.addEventListener('focus', paint); input.addEventListener('blur', paint);
+  document.getElementById('gate-form').addEventListener('submit', function (e) { e.preventDefault(); check(); });
+  window.obcnLock = function () {
+    try { sessionStorage.removeItem(KEY); } catch (e) {}
+    root.classList.remove('unlocked'); input.value = ''; msg.textContent = ''; paint(); input.focus();
+  };
+  if (!root.classList.contains('unlocked')) setTimeout(function () { input.focus(); }, 50);
+  paint();
+})();
+</script>
+
+<nav class="nav" aria-label="Menú principal">
+  <div class="nav-in">
+    <div class="nav-left">
+    <a class="brand" href="#generar" aria-label="Inici"><img src="assets/img/logo.jpg" alt="Origen's BCN"></a>
+    <ul>
+      <li><a href="#generar" data-nav="generar">Generar pressupost</a></li>
+      <li><a href="#pressupostos" data-nav="pressupostos">Pressupostos<span class="count" id="nav-count">0</span></a></li>
+      <li><a href="#serveis" data-nav="serveis">Serveis</a></li>
+    </ul>
+    </div>
+    <button type="button" class="lock" onclick="obcnLock()" title="Tancar la sessió i tornar a demanar el codi">Bloquejar</button>
+  </div>
+</nav>
+
+<!-- ======================= GENERAR ======================= -->
+<div class="wrap" id="view-generar" data-view="generar">
+  <header class="top">
+    <div>
+      <h1 id="gen-title">Nou pressupost</h1>
+      <p>Omple les dades del client i les peticions de servei. El total es calcula sol i el PDF surt amb el format de proposta d'Origen's BCN.</p>
+      <span class="editing" id="editing" hidden></span>
+    </div>
+    <div class="logo"><img src="assets/img/logo.jpg" alt="Origen's BCN, professionals per a l'hostaleria"></div>
+  </header>
+
+  <div class="grid">
+    <main>
+      <section class="block">
+        <h2>Client</h2>
+        <p class="hint">Empresa i persona que rebrà la proposta.</p>
+        <div class="fields">
+          <label class="f">Empresa<input data-k="client.empresa" autocomplete="organization" placeholder="Nom de l'empresa"></label>
+          <label class="f">Persona de contacte<input data-k="client.contacte" autocomplete="name" placeholder="Nom i cognoms"></label>
+          <label class="f">Email<input data-k="client.email" type="email" autocomplete="email" placeholder="nom@empresa.cat"><span class="err" id="err-email"></span></label>
+          <label class="f">Ubicació del servei<input data-k="client.ubicacio" placeholder="Barcelona"></label>
+        </div>
+      </section>
+
+      <section class="block">
+        <h2>Proposta</h2>
+        <p class="hint">La referència identifica aquest pressupost al PDF, a l'historial i al Google Sheets de serveis.</p>
+        <div class="fields">
+          <div class="f" style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600">Referència
+            <div class="refbox"><output id="ref-out"></output><button type="button" class="btn-ghost" id="ref-new" title="Generar una referència nova">Nova</button></div>
+          </div>
+          <label class="f">Data de la proposta<input data-k="proposta.data" type="date"></label>
+          <label class="f">Validesa (dies)<input data-k="proposta.validesa" type="number" min="1" inputmode="numeric"></label>
+          <label class="f">Tarifa base per defecte<select data-k="defaults.base" id="def-base"></select></label>
+          <label class="f">Hora extra per defecte<select data-k="defaults.extra" id="def-extra"></select></label>
+        </div>
+      </section>
+
+      <section class="block">
+        <h2>Dates i peticions</h2>
+        <p class="hint">Una targeta per cada data. Dins de cada data, una línia per tipus de professional amb el seu horari i tarifa.</p>
+        <div id="events"></div>
+        <button class="btn-ghost" type="button" id="add-event">+ Afegir data</button>
+      </section>
+
+      <section class="block">
+        <h2>Observacions <span style="font-size:16px;font-weight:500;color:var(--muted)">opcional</span></h2>
+        <label class="f"><span class="sr">Observacions</span><textarea data-k="observacions" placeholder="Uniforme, accessos, punt de trobada..."></textarea></label>
+      </section>
+
+      <section class="block">
+        <h2>Dades fiscals per a la factura</h2>
+        <p class="hint">Surten a l'apartat de signatura. Si les deixes buides, al PDF hi haurà línies en blanc perquè el client les ompli.</p>
+        <div class="fields">
+          <label class="f">Raó social<input data-k="fiscal.rao"></label>
+          <label class="f">NIF / CIF<input data-k="fiscal.nif"></label>
+          <label class="f">Adreça fiscal<input data-k="fiscal.adreca" autocomplete="street-address"></label>
+          <label class="f">CP i població<input data-k="fiscal.cp"></label>
+          <label class="f">Email de facturació<input data-k="fiscal.email" type="email"></label>
+          <label class="f">Núm. comanda / referència client<input data-k="fiscal.ref"></label>
+        </div>
+      </section>
+    </main>
+
+    <aside class="ticket" aria-live="polite">
+      <h2>Resum</h2>
+      <div class="trow"><span>Dates</span><b id="s-dates">0</b></div>
+      <div class="trow"><span>Professionals</span><b id="s-pros">0</b></div>
+      <div class="trow"><span>Subtotal</span><b id="s-sub">0 €</b></div>
+      <div class="trow"><span>IVA 21%</span><b id="s-iva">0 €</b></div>
+      <div class="big" id="s-total">0 €</div>
+      <div class="big-l">Total amb IVA</div>
+      <ul class="issues" id="issues" hidden></ul>
+      <button class="btn-sec" type="button" id="save">Desar a Pressupostos</button>
+      <button class="btn" type="button" id="gen">Desar i descarregar PDF</button>
+      <div class="status" id="status"></div>
+      <button class="reset" type="button" id="reset">Nou pressupost</button>
+    </aside>
+  </div>
+
+  <div class="mobilebar">
+    <div><small>Total amb IVA</small><span class="mt" id="m-total">0 €</span></div>
+    <button type="button" id="gen-m">Descarregar PDF</button>
+  </div>
+</div>
+
+<!-- ======================= PRESSUPOSTOS ======================= -->
+<div class="wrap" id="view-pressupostos" data-view="pressupostos" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Pressupostos</h1>
+      <p>Historial de propostes desades en aquest navegador. Canvia l'estat, posa una data de seguiment i copia la fila per enganxar-la al Google Sheets.</p>
+    </div>
+    <div class="tools">
+      <button type="button" class="btn-ghost" id="exp-csv">Exportar CSV</button>
+      <button type="button" class="btn-ghost" id="exp-json">Còpia de seguretat</button>
+      <button type="button" class="btn-ghost" id="imp-json">Restaurar còpia</button>
+      <input type="file" id="imp-file" accept="application/json,.json" hidden>
+    </div>
+  </div>
+  <div class="stats" id="stats"></div>
+  <div class="filters">
+    <label class="f">Cerca<input type="search" id="q" placeholder="Referència, client, contacte..."></label>
+    <label class="f">Estat<select id="fstatus"></select></label>
+  </div>
+  <div id="records"></div>
+</div>
+
+<!-- ======================= SERVEIS ======================= -->
+<div class="wrap" id="view-serveis" data-view="serveis" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Serveis</h1>
+      <p>Full de Google Sheets amb els serveis programats i realitzats. La columna Referència enllaça cada servei amb la seva proposta.</p>
+    </div>
+    <div class="tools">
+      <a class="btn-ghost" id="sheet-open" target="_blank" rel="noopener" style="text-decoration:none;border-radius:6px" hidden>Obrir a Google Sheets</a>
+    </div>
+  </div>
+
+  <div class="sheet-cfg">
+    <label class="f">Enllaç del Google Sheets<input id="sheet-url" type="url" placeholder="https://docs.google.com/spreadsheets/d/..."></label>
+    <button type="button" class="btn" id="sheet-save">Vincular full</button>
+  </div>
+  <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px" id="sheet-modes" hidden>
+    <div class="seg" role="group" aria-label="Mode de visualització">
+      <button type="button" data-mode="edit" aria-pressed="true">Editable</button>
+      <button type="button" data-mode="preview" aria-pressed="false">Només lectura</button>
+    </div>
+    <span style="font-size:13px;color:var(--muted)">El mode editable demana tenir la sessió de Google oberta amb permís d'edició al full.</span>
+    <button type="button" class="icon-btn" id="sheet-unlink">Desvincular</button>
+  </div>
+
+  <div class="sheet-frame" id="sheet-frame" hidden></div>
+
+  <div id="sheet-help" class="empty" style="text-align:left">
+    <h2>Com vincular el full</h2>
+    <ol class="steps">
+      <li>Al Google Sheets, prem <b>Comparteix</b> i dona accés a qui hagi de veure'l (o "Qualsevol amb l'enllaç" si vols que es vegi sense sessió).</li>
+      <li>Copia l'enllaç de la barra del navegador i enganxa'l a dalt.</li>
+      <li>Fes servir aquestes columnes a la primera fila perquè les files copiades des de Pressupostos encaixin:</li>
+    </ol>
+    <div class="cols" id="sheet-cols"></div>
+    <button type="button" class="btn-ghost" id="copy-head">Copiar capçalera</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/logo.js"></script>
+<script src="assets/js/pdf-builder.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>
