@@ -350,7 +350,7 @@ html.unlocked #gate{display:none}
           <label class="f">Empresa<input data-k="client.empresa" autocomplete="organization" placeholder="Nom de l'empresa"></label>
           <label class="f">Persona de contacte<input data-k="client.contacte" autocomplete="name" placeholder="Nom i cognoms"></label>
           <label class="f">Email<input data-k="client.email" type="email" autocomplete="email" placeholder="nom@empresa.cat"><span class="err" id="err-email"></span></label>
-          <label class="f">Ubicació del servei<input data-k="client.ubicacio" placeholder="Barcelona"></label>
+          <label class="f">Ubicació del servei<input data-k="client.ubicacio" placeholder="Adreça o població"></label>
         </div>
       </section>
 
@@ -509,7 +509,7 @@ window.OB_CONFIG = {
   estats: ['Esborrany', 'Enviat', 'Acceptat', 'Rebutjat', 'Facturat'],
 
   validesaDies: 30,
-  ubicacioDefecte: 'Barcelona'
+  ubicacioDefecte: ''
 };
 
 </script>
@@ -700,6 +700,7 @@ const OB = (function () {
       hasHam ? 'El servei de tallador de pernil té una tarifa específica, detallada a la línia corresponent.' : 'Servei de tallador de pernil disponible sota petició, amb tarifa específica a part.',
       'El nombre de professionals, les dates i l\'horari final s\'ajustaran segons les necessitats confirmades pel client. Qualsevol modificació pot variar l\'import final.',
       'Preus sense IVA a les columnes de tarifa; IVA del 21% aplicat sobre el subtotal.',
+      'Els dies 1 i 6 de gener, 24 de juny i 24, 25, 26 i 31 de desembre estan subjectes a una tarificació diferent, que es confirmarà en cada cas.',
       `Aquesta proposta té una validesa de ${p.validesa || 30} dies a comptar de la data d'emissió.`,
       'Us agraïm que, sempre que sigui possible, feu arribar les peticions de servei amb la màxima antelació: això ens permet garantir la disponibilitat del personal i oferir-vos les millors condicions.'
     ];
